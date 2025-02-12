@@ -1,34 +1,55 @@
-FROM node:20.18.0
+ARG BASE=node:20.18.0
+FROM ${BASE} AS base
 
 WORKDIR /app
 
-# Instalar pnpm e wrangler
-RUN corepack enable pnpm && \
-    npm install -g wrangler
-
-# Copiar arquivos de dependências
+# Copia os arquivos de dependência para aproveitar o cache
 COPY package.json pnpm-lock.yaml ./
 
-# Instalar dependências
+# Atualiza o npm, instala o Corepack, configura o pnpm e instala o Wrangler
+RUN npm install -g npm@latest && \
+    npm install -g corepack@latest && \
+    corepack enable pnpm && \
+    corepack use pnpm@latest-10 && \
+    npm install -g wrangler@latest
+
+# Instala as dependências do projeto
 RUN pnpm install
 
-# Copiar código  fonte e scripts
+# Etapa de build: copia o restante do código, ajusta os scripts e executa o build
+FROM base AS build
+
+WORKDIR /app
+
+# Copia o restante do projeto
 COPY . .
 
-# Garantir que o bindings.sh tem permissões de execução e formato correto
+# Torna o script postdeploy.sh executável
+RUN chmod +x postdeploy.sh
+
+# Corrige o formato do bindings.sh e garante sua execução
 RUN tr -d '\r' < bindings.sh > bindings.tmp && \
     mv bindings.tmp bindings.sh && \
     chmod +x bindings.sh
 
-# Build da aplicação
+# Pré-configura o Wrangler para desativar as métricas
+RUN mkdir -p /root/.config/.wrangler && \
+    echo '{"enabled":false}' > /root/.config/.wrangler/metrics.json
+
+# Executa o build da aplicação
 RUN pnpm run build
 
-# Expor porta
+# Expondo a porta da aplicação
 EXPOSE 5173
 
-# Configurar variáveis de ambiente
-ENV NODE_ENV=production \
-    RUNNING_IN_DOCKER=true
+# Etapa final: imagem de produção para uso com Coolify
+FROM build AS production
 
-# Comando para iniciar usando o script dockerstart
+# Recebe o argumento SESSION_SECRET, que pode ser injetado no build
+ARG SESSION_SECRET
+ENV NODE_ENV=production \
+    RUNNING_IN_DOCKER=true \
+    SESSION_SECRET=${SESSION_SECRET}
+
+# Comando final para iniciar a aplicação
 CMD ["pnpm", "run", "dockerstart"]
