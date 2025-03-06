@@ -23,14 +23,19 @@ export default async function handleRequest(
     },
   });
 
+  // Ensure we're explicitly setting the doctype with no preceding whitespace
+  const doctype = '<!DOCTYPE html>';
+  const htmlStart = `<html lang="en" data-theme="${themeStore.value}">`;
+  
   const body = new ReadableStream({
     start(controller) {
       const head = renderHeadToString({ request, remixContext, Head });
 
+      // Ensure DOCTYPE is the very first thing in the document
       controller.enqueue(
         new Uint8Array(
           new TextEncoder().encode(
-            `<!DOCTYPE html><html lang="en" data-theme="${themeStore.value}"><head>${head}</head><body><div id="root" class="w-full h-full">`,
+            `${doctype}${htmlStart}<head>${head}</head><body><div id="root" class="w-full h-full">`,
           ),
         ),
       );
@@ -68,7 +73,8 @@ export default async function handleRequest(
     await readable.allReady;
   }
 
-  responseHeaders.set('Content-Type', 'text/html');
+  // Ensure Content-Type is set properly with charset
+  responseHeaders.set('Content-Type', 'text/html; charset=utf-8');
 
   responseHeaders.set('Cross-Origin-Embedder-Policy', 'require-corp');
   responseHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
